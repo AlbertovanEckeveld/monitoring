@@ -40,6 +40,7 @@ groups:
         expr: sum by (system) (rate(node_network_receive_bytes_total{device!~"lo|docker.*|veth.*|br-.*|virbr.*|cali.*|flannel.*|cni.*"}[30s]))
 
       # Write amplification = bytes naar disk / bytes die de client verstuurt.
+      # 'loadgen' = de monitoring-VM (die genereert ook de load).
       # Alleen zinvol tijdens PUT-tests, en als de load-generator alleen naar
       # het geteste systeem verkeer stuurt. Bij 3x replicatie verwacht je >= 3.
       - record: system:write_amplification:ratio

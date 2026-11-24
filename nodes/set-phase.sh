@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 PHASE="${1:-}"
-[[ "$PHASE" =~ ^(ceph|seaweedfs|loadgen)$ ]] || { echo "Gebruik: $0 ceph|seaweedfs|loadgen" >&2; exit 1; }
+[[ "$PHASE" =~ ^(ceph|seaweedfs)$ ]] || { echo "Gebruik: $0 ceph|seaweedfs" >&2; exit 1; }
 [[ -f .env ]] || cp .env.example .env
 
 if grep -q '^SYSTEM=' .env; then

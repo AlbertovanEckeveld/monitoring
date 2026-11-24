@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Draai een benchmark-commando met annotatie in Grafana en resultaten in de Pushgateway.
-# Draait op de load-generator (Linux, GNU date). Vereist: curl, jq.
+# Draait op de load-generator = de monitoring-VM (Linux, GNU date). Vereist: curl, jq.
 #
 # Gebruik:
 #   run-bench.sh <system> <testnaam> [--fio-json <bestand>] -- <commando...>
@@ -17,14 +17,19 @@
 #   (--fio-json staat vóór de '--' en wijst naar hetzelfde bestand als fio's --output)
 #
 # Omgevingsvariabelen:
-#   GRAFANA_URL      bv. http://monitoring-vm:3000
+#   GRAFANA_URL      bv. http://localhost:3000
 #   GRAFANA_TOKEN    service-account-token met rol Editor (Grafana > Administration > Service accounts)
-#   PUSHGATEWAY_URL  bv. http://monitoring-vm:9091
+#   PUSHGATEWAY_URL  bv. http://localhost:9091
 #   RESULTS_DIR      standaard ./results
+#   (GRAFANA_* en PUSHGATEWAY_URL worden uit ../bench.env gelezen als die bestaat)
 
 set -euo pipefail
 
-usage() { sed -n '2,25p' "$0"; exit 1; }
+# bench.env (gemaakt door setup-monitoring-vm.sh) automatisch inlezen, als die er is
+BENCH_ENV="$(cd "$(dirname "$0")/.." && pwd)/bench.env"
+if [[ -f "$BENCH_ENV" ]]; then set -a; . "$BENCH_ENV"; set +a; fi
+
+usage() { sed -n '2,26p' "$0"; exit 1; }
 [[ $# -ge 3 ]] || usage
 
 SYSTEM="$1"; NAME="$2"; shift 2

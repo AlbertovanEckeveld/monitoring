@@ -22,7 +22,7 @@ services:
     ports:
       - "9090:9090"
     extra_hosts:
-      - "host.docker.internal:host-gateway"   # om node_exporter van de VM zelf te scrapen
+      - "host.docker.internal:host-gateway"   # node_exporter van de VM zelf (= load-generator)
 
   pushgateway:
     image: prom/pushgateway:v1.11.1
@@ -65,7 +65,7 @@ services:
       - prometheus
       - loki
 
-  # Metrics van de monitoring-VM zelf: check dat deze VM geen bottleneck is
+  # Metrics van de monitoring-VM, die ook de load-generator is (system=loadgen in targets/node.yml)
   node-exporter:
     image: prom/node-exporter:v1.9.1
     restart: unless-stopped

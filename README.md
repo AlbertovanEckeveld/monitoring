@@ -2,7 +2,7 @@
 
 ```
 monitoring/
-├── docker-compose.yml          # monitoring-VM: Prometheus, Grafana, Pushgateway, Loki, node_exporter
+├── docker-compose.yml          # monitoring-VM (= load-generator): Prometheus, Grafana, Pushgateway, Loki, node_exporter
 ├── .env.example                # Grafana-wachtwoord, retentie
 ├── prometheus/
 │   ├── prometheus.yml          # scrape-jobs
@@ -16,25 +16,38 @@ monitoring/
 │       ├── ceph/               # via scripts/fetch-dashboards.sh
 │       └── seaweedfs/          # via scripts/fetch-dashboards.sh
 ├── loki/loki.yml
-├── nodes/                      # agents voor storage-nodes en load-generator
+├── nodes/                      # agents voor de storage-nodes
 │   ├── docker-compose.yml      # node_exporter + Grafana Alloy
 │   ├── config.alloy
+│   ├── setup-node.sh           # storage-node in één keer opzetten
 │   └── set-phase.sh            # SYSTEM-label wisselen + agents (her)starten
 └── scripts/
+    ├── setup-monitoring-vm.sh  # monitoring-VM in één keer opzetten
     ├── set-phase.sh            # fase wisselen: ceph | seaweedfs
     ├── fetch-dashboards.sh     # officiële Ceph/SeaweedFS-dashboards ophalen
     └── run-bench.sh            # benchmark + Grafana-annotatie + Pushgateway
 ```
 
-## 1. Monitoring-VM
+## 1. Monitoring-VM (is ook de load-generator)
+
+De benchmarks draaien op de monitoring-VM zelf. De node_exporter van deze VM krijgt het label
+`system=loadgen`. Daaruit komt het client-verkeer voor de write amplification.
+
+Eén commando zet alles op:
+- docker, chrony en fio;
+- `.env` met een willekeurig wachtwoord;
+- de dashboards en de testfase;
+- de stack;
+- een Grafana-token (`bench.env`);
+- de firewall-poorten.
+
+Je kunt het veilig opnieuw draaien.
 
 ```bash
-cp .env.example .env            # wachtwoord invullen
-vi prometheus/targets/node.yml  # hostnaam load-generator invullen
-./scripts/fetch-dashboards.sh squid
-./scripts/set-phase.sh ceph     # begin in fase 1
-docker compose up -d
+sudo ./scripts/setup-monitoring-vm.sh
 ```
+
+Opties: `--phase ceph|seaweedfs`, `--ceph-branch squid`, `--hostname <naam>`, `--skip-dashboards`.
 
 - Grafana: `http://<vm>:3000`, Prometheus: `:9090`, Pushgateway: `:9091`
 - Controleer in Prometheus onder **Status → Targets** dat alles `UP` is.
@@ -48,12 +61,16 @@ Ceph blijven daardoor gewoon bewaard onder `system="ceph"` als je overstapt.
 
 ### Stap 0 – Basis-image (vóór de snapshot)
 
-Op alle 4 storage-nodes en de load-generator (map `nodes/`):
+Kopieer de map `nodes/` naar elke storage-node en zet de node op. Vanaf de monitoring-VM bijvoorbeeld:
 ```bash
-# docker + chrony geïnstalleerd, klok synchroon
-cp .env.example .env            # LOKI_URL invullen
-./set-phase.sh ceph             # op de load-generator: ./set-phase.sh loadgen
+MON=$(hostname -f)
+for h in sue-poc-storage01 sue-poc-storage02 sue-poc-storage03 sue-poc-storage04; do
+  scp -r nodes "$h":~/ && ssh -t "$h" "sudo ~/nodes/setup-node.sh ceph $MON"
+done
 ```
+`setup-node.sh` installeert docker en chrony, schrijft `.env` en opent de poorten 9100 en 9324-9327.
+Het controleert ook dat poort 9100 vrij is en start node_exporter en Alloy.
+
 Controleer dat de nodes `UP` zijn in Prometheus. **Maak daarna de snapshot.** Zo hebben
 beide systemen exact dezelfde node_exporter en hoeven de agents na de revert niet opnieuw te worden geïnstalleerd.
 
@@ -77,7 +94,7 @@ Draai de tests met `./scripts/run-bench.sh ceph <testnaam> -- ...` (zie §3).
 
 ### Stap 2 – Snapshot terugzetten, SeaweedFS
 
-1. Zet de 4 storage-nodes terug naar de snapshot. **De monitoring-VM en de load-generator niet terugzetten.**
+1. Zet de 4 storage-nodes terug naar de snapshot. **De monitoring-VM niet terugzetten.**
 2. Monitoring-VM: `./scripts/set-phase.sh seaweedfs`.
    Dit schakelt de Ceph-targets uit, de SeaweedFS-targets in en zet de storage-nodes op `system="seaweedfs"`.
 3. Op elke storage-node: `cd nodes && ./set-phase.sh seaweedfs`.
@@ -88,6 +105,10 @@ Draai de tests met `./scripts/run-bench.sh ceph <testnaam> -- ...` (zie §3).
 
 ### Vergelijken
 
+Let op: de monitoring-VM genereert de load en verwerkt tegelijk de metrics en logs.
+Kijk tijdens zware runs in het vergelijkingsdashboard naar de CPU van `loadgen`. Zit die
+tegen 100%, dan meet je de load-generator en niet het storagesysteem.
+
 Omdat de fases na elkaar lopen, zie je in de tijdgrafieken per tijdvak maar één systeem.
 Vergelijk ze zo:
 - **Resultatentabellen** (Pushgateway) tonen alle runs van beide systemen naast elkaar.
@@ -96,11 +117,10 @@ Vergelijk ze zo:
 
 ## 3. Benchmarken
 
-Maak in Grafana een service account met de rol *Editor* en een token. Gebruik daarna op de load-generator:
+`run-bench.sh` leest `bench.env` (naast `scripts/`) automatisch in. Dat bestand is
+gemaakt door `setup-monitoring-vm.sh`. Op de monitoring-VM:
 
 ```bash
-export GRAFANA_URL=http://monitoring-vm:3000 GRAFANA_TOKEN=... PUSHGATEWAY_URL=http://monitoring-vm:9091
-
 ./scripts/run-bench.sh ceph put-1MiB-c32 -- \
   warp put --host=rgw1:8080 --access-key="$AK" --secret-key="$SK" \
     --obj.size=1MiB --concurrent=32 --duration=5m --benchdata=results/ceph_put-1MiB-c32

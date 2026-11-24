@@ -1,8 +1,14 @@
-# node_exporter op de load-generator(s) en andere vaste machines (poort 9100).
-# De storage-nodes (sue-poc-storage01-04) staan NIET hier maar in storage-nodes.yml,
-# want hun label 'system' wisselt per testfase (zie scripts/set-phase.sh).
-# Het label 'system' is de sleutel voor alle vergelijkingspanelen.
+# De monitoring-VM is ook de load-generator. Zijn node_exporter (docker-compose.yml,
+# host-netwerk, poort 9100) is vanuit de Prometheus-container bereikbaar via host.docker.internal.
+# 'instance' wordt door scripts/setup-monitoring-vm.sh op de echte hostnaam gezet.
+#
+# Let op: het netwerkverkeer van deze VM omvat naast de benchmark ook scrapes en het
+# Grafana/Loki-verkeer. Dat is klein vergeleken met een benchmark, maar meet de baseline even.
+# De write-amplification-regel telt pas boven 1 MB/s TX.
+#
+# De storage-nodes (sue-poc-storage01-04) staan in storage-nodes.yml (label wisselt per fase).
 
-- targets: ['loadgen1:9100']      # <-- hostnaam van de load-generator invullen
+- targets: ['host.docker.internal:9100']
   labels:
     system: loadgen
+    instance: monitoring-vm

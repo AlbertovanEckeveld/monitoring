@@ -8,13 +8,17 @@
 # Wat het doet:
 #   - schrijft prometheus/targets/storage-nodes.yml met system=<fase>
 #   - zet de targets van het andere systeem uit (*.yml -> *.yml.disabled)
-#   - plaatst optioneel een Grafana-annotatie (als GRAFANA_URL + GRAFANA_TOKEN gezet zijn)
+#   - plaatst een Grafana-annotatie (als GRAFANA_URL + GRAFANA_TOKEN gezet zijn, bv. via bench.env)
 # Prometheus pikt dit binnen enkele seconden op, zonder reload. Data van de vorige
 # fase blijft gewoon bewaard onder het oude label.
 #
 # Omgevingsvariabelen:
 #   STORAGE_NODES   standaard "sue-poc-storage01 sue-poc-storage02 sue-poc-storage03 sue-poc-storage04"
 set -euo pipefail
+
+# bench.env (gemaakt door setup-monitoring-vm.sh) automatisch inlezen, als die er is
+BENCH_ENV="$(cd "$(dirname "$0")/.." && pwd)/bench.env"
+if [[ -f "$BENCH_ENV" ]]; then set -a; . "$BENCH_ENV"; set +a; fi
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)/prometheus/targets"
 STORAGE_NODES="${STORAGE_NODES:-sue-poc-storage01 sue-poc-storage02 sue-poc-storage03 sue-poc-storage04}"
@@ -57,7 +61,7 @@ echo "Fase: $PHASE"
 echo "  aan: ${ON[*]}   uit: ${OFF[*]}"
 echo "  storage-nodes: $STORAGE_NODES"
 
-if [[ -n "${GRAFANA_URL:-}" && -n "${GRAFANA_TOKEN:-}" ]]; then
+if [[ -z "${NO_ANNOTATION:-}" && -n "${GRAFANA_URL:-}" && -n "${GRAFANA_TOKEN:-}" ]]; then
   curl -fsS -H "Authorization: Bearer $GRAFANA_TOKEN" -H "Content-Type: application/json" \
     -X POST "$GRAFANA_URL/api/annotations" \
     --data-binary "{\"time\":$(( $(date +%s) * 1000 )),\"tags\":[\"phase\",\"$PHASE\"],\"text\":\"Fase: $PHASE\"}" \

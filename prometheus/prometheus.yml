@@ -21,12 +21,14 @@ scrape_configs:
   - job_name: node
     file_sd_configs:
       - files:
-          - /etc/prometheus/targets/node.yml            # load-generator e.d. (vast)
+          - /etc/prometheus/targets/node.yml            # monitoring-VM = load-generator (vast)
           - /etc/prometheus/targets/storage-nodes.yml   # sue-poc-storage01-04 (per fase)
     relabel_configs:
-      # instance = hostnaam zonder poort, zodat je kunt joinen met andere jobs
-      - source_labels: [__address__]
-        regex: '([^:]+)(:\d+)?'
+      # instance = hostnaam zonder poort, zodat je kunt joinen met andere jobs.
+      # Alleen als de target zelf geen 'instance' meegeeft (zie node.yml).
+      - source_labels: [instance, __address__]
+        separator: ';'
+        regex: ';([^:]+)(:\d+)?'
         target_label: instance
         replacement: '$1'
 
@@ -59,9 +61,8 @@ scrape_configs:
       - targets: ['pushgateway:9091']
 
   # --- Monitoring-stack zelf ---
+  # De node_exporter van deze VM zit in job 'node' (system=loadgen), want deze VM is ook de load-generator.
   - job_name: monitoring-self
     static_configs:
       - targets: ['localhost:9090']
         labels: {component: prometheus}
-      - targets: ['host.docker.internal:9100']
-        labels: {component: node, system: monitoring}

@@ -1,4 +1,5 @@
-# Agents voor ELKE storage-node (sue-poc-storage01-04) en de load-generator.
+# Agents voor ELKE storage-node (sue-poc-storage01-04).
+# (De monitoring-VM is ook de load-generator en heeft zijn eigen node_exporter in ../docker-compose.yml.)
 #
 # Installeer deze agents VOORDAT je de snapshot maakt. Dan staan ze na de
 # snapshot-revert er nog en meet je Ceph en SeaweedFS met exact dezelfde node_exporter.
@@ -33,7 +34,7 @@ services:
     restart: unless-stopped
     network_mode: host            # dan is de hostnaam in de logs die van de node zelf
     environment:
-      SYSTEM: ${SYSTEM:?zet SYSTEM (ceph|seaweedfs|loadgen) in .env}
+      SYSTEM: ${SYSTEM:?zet SYSTEM (ceph|seaweedfs) in .env}
       LOKI_URL: ${LOKI_URL:?zet LOKI_URL in .env}
     command:
       - run
