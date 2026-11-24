@@ -5,6 +5,6 @@
 # Activeren op het cluster:
 #   ceph mgr module enable prometheus
 #   ceph config set mgr mgr/prometheus/scrape_interval 5
-- targets: ['sue-poc-storage01:9283', 'sue-poc-storage02:9283']
+- targets: ['16.171.147.252:9283', '13.53.197.123:9283']
   labels:
     system: ceph

@@ -2,3 +2,4 @@
 results/*
 !results/.gitkeep
 bench.env
+ceph-s3.env

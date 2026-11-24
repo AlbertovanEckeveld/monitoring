@@ -78,6 +78,14 @@ beide systemen exact dezelfde node_exporter en hoeven de agents na de revert nie
 
 Monitoring-VM: `./scripts/set-phase.sh ceph` (staat al zo als je net begonnen bent).
 
+Automatisch, vanaf je laptop of de monitoring-VM (leest de IP's uit `hosts.md`, werkt via SSH + sudo):
+```bash
+./scripts/setup-ceph.sh --user ubuntu -i ~/.ssh/sue-poc.pem
+```
+Dit voert de stappen hieronder uit en gebruikt daarbij de **private** IP's van de nodes. Daarna schrijft het
+`ceph-s3.env` (RGW-endpoint en S3-sleutels voor warp). Elke node heeft een lege schijf nodig voor de OSD's.
+
+Handmatig komt het hierop neer:
 ```bash
 cephadm bootstrap --mon-ip <ip-storage01> --skip-monitoring-stack   # GEEN eigen node-exporter op 9100
 ceph orch host add sue-poc-storage02 <ip>   # ... t/m 04

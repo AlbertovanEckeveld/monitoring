@@ -1,5 +1,5 @@
 # GEGENEREERD door scripts/set-phase.sh – niet met de hand aanpassen.
 # Huidige fase: ceph
-- targets: ['sue-poc-storage01:9100', 'sue-poc-storage02:9100', 'sue-poc-storage03:9100', 'sue-poc-storage04:9100']
+- targets: ['16.171.147.252:9100', '13.53.197.123:9100', '51.20.4.68:9100', '16.171.152.90:9100']
   labels:
     system: ceph
