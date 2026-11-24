@@ -11,4 +11,4 @@
 - targets: ['host.docker.internal:9100']
   labels:
     system: loadgen
-    instance: monitoring-vm
+    instance: sue-poc-monitoring
