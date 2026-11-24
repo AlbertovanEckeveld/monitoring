@@ -6,15 +6,26 @@
 #   weed s3     -metricsPort=9327 ...
 # Aangenomen topologie: 3 masters (01-03), volume op alle 4, filer + s3 op 01.
 # Pas dit aan als jullie het anders uitrollen.
+# 'cluster' is nodig voor het officiële SeaweedFS-dashboard (variabele $cluster).
 
-- targets: ['sue-poc-storage01:9324', 'sue-poc-storage02:9324', 'sue-poc-storage03:9324']
-  labels: {system: seaweedfs, component: master}
+- targets: ['172.31.46.179:9324']
+  labels: {system: seaweedfs, cluster: sue-poc, component: master, instance: sue-poc-storage01}
+- targets: ['172.31.33.90:9324']
+  labels: {system: seaweedfs, cluster: sue-poc, component: master, instance: sue-poc-storage02}
+- targets: ['172.31.33.88:9324']
+  labels: {system: seaweedfs, cluster: sue-poc, component: master, instance: sue-poc-storage03}
 
-- targets: ['sue-poc-storage01:9325', 'sue-poc-storage02:9325', 'sue-poc-storage03:9325', 'sue-poc-storage04:9325']
-  labels: {system: seaweedfs, component: volume}
+- targets: ['172.31.46.179:9325']
+  labels: {system: seaweedfs, cluster: sue-poc, component: volume, instance: sue-poc-storage01}
+- targets: ['172.31.33.90:9325']
+  labels: {system: seaweedfs, cluster: sue-poc, component: volume, instance: sue-poc-storage02}
+- targets: ['172.31.33.88:9325']
+  labels: {system: seaweedfs, cluster: sue-poc, component: volume, instance: sue-poc-storage03}
+- targets: ['172.31.32.222:9325']
+  labels: {system: seaweedfs, cluster: sue-poc, component: volume, instance: sue-poc-storage04}
 
-- targets: ['sue-poc-storage01:9326']
-  labels: {system: seaweedfs, component: filer}
+- targets: ['172.31.46.179:9326']
+  labels: {system: seaweedfs, cluster: sue-poc, component: filer, instance: sue-poc-storage01}
 
-- targets: ['sue-poc-storage01:9327']
-  labels: {system: seaweedfs, component: s3}
+- targets: ['172.31.46.179:9327']
+  labels: {system: seaweedfs, cluster: sue-poc, component: s3, instance: sue-poc-storage01}

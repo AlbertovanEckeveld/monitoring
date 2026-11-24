@@ -1,10 +1,10 @@
 # Fase 1 (Ceph). Wordt door scripts/set-phase.sh aan/uit gezet (.disabled).
-# Alle hosts die een ceph-mgr kunnen draaien; hosts zonder actieve mgr leveren geen data,
-# hosts zonder mgr staan DOWN. Liefst de mgr's vastpinnen:
+# mgr/prometheus-module. Alleen de actieve mgr levert data; de standby geeft een lege pagina (UP, geen series).
+# De mgr's zijn vastgepind door scripts/setup-ceph.sh:
 #   ceph orch apply mgr --placement="sue-poc-storage01,sue-poc-storage02"
-# Activeren op het cluster:
 #   ceph mgr module enable prometheus
 #   ceph config set mgr mgr/prometheus/scrape_interval 5
-- targets: ['16.171.147.252:9283', '13.53.197.123:9283']
-  labels:
-    system: ceph
+- targets: ['172.31.46.179:9283']
+  labels: {system: ceph, instance: sue-poc-storage01}
+- targets: ['172.31.33.90:9283']
+  labels: {system: ceph, instance: sue-poc-storage02}

@@ -1,21 +1,34 @@
-# Recording rules: alles geaggregeerd per 'system' (ceph | seaweedfs | loadgen),
-# zodat het vergelijkingsdashboard snel en consistent is.
+# Recording rules: alles geaggregeerd per 'system' (ceph | seaweedfs | loadgen), met voor
+# beide systemen dezelfde naam en eenheid. Het vergelijkingsdashboard en run-bench.sh
+# (samenvatting per run) gebruiken alleen deze reeksen.
 #
 # Schijven: alleen fysieke devices (geen partities, dm-/LVM of loop), anders
 # tel je bij Ceph (LVM onder OSD's) dubbel.
 
 groups:
+  # ------------------------------------------------------------------ systeemresources (node_exporter)
   - name: storage-compare
     interval: 5s
     rules:
       - record: system:node_cpu_utilisation:avg
         expr: 1 - avg by (system) (rate(node_cpu_seconds_total{mode="idle"}[30s]))
 
+      # Gebruikte cores (som over alle nodes), zonder idle, iowait en steal.
+      # Basis voor 'CPU-cores per 1.000 req/s' (hoofdstuk 10).
+      - record: system:node_cpu_cores_used:sum
+        expr: sum by (system) (rate(node_cpu_seconds_total{mode!~"idle|iowait|steal"}[30s]))
+
+      - record: system:node_cpu_cores:count
+        expr: count by (system) (node_cpu_seconds_total{mode="idle"})
+
       - record: system:node_cpu_iowait:avg
         expr: avg by (system) (rate(node_cpu_seconds_total{mode="iowait"}[30s]))
 
       - record: system:node_memory_used_bytes:sum
         expr: sum by (system) (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
+
+      - record: system:node_memory_total_bytes:sum
+        expr: sum by (system) (node_memory_MemTotal_bytes)
 
       - record: system:node_disk_written_bytes:rate30s
         expr: sum by (system) (rate(node_disk_written_bytes_total{device=~"sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme[0-9]+n[0-9]+"}[30s]))
@@ -39,12 +52,158 @@ groups:
       - record: system:node_network_receive_bytes:rate30s
         expr: sum by (system) (rate(node_network_receive_bytes_total{device!~"lo|docker.*|veth.*|br-.*|virbr.*|cali.*|flannel.*|cni.*"}[30s]))
 
-      # Write amplification = bytes naar disk / bytes die de client verstuurt.
-      # 'loadgen' = de monitoring-VM (die genereert ook de load).
-      # Alleen zinvol tijdens PUT-tests, en als de load-generator alleen naar
-      # het geteste systeem verkeer stuurt. Bij 3x replicatie verwacht je >= 3.
+      # Oude definitie (client = netwerk-TX van de loadgen). Blijft voor continuïteit;
+      # het dashboard gebruikt system:write_amplification_s3:ratio hieronder.
       - record: system:write_amplification:ratio
         expr: |
           system:node_disk_written_bytes:rate30s{system=~"ceph|seaweedfs"}
             / ignoring(system) group_left()
           (sum(system:node_network_transmit_bytes:rate30s{system="loadgen"}) > 1e6)
+
+  # ------------------------------------------------------------------ S3-laag (serverkant)
+  # Ceph: RGW-perf counters via ceph-exporter. SeaweedFS: metrics van 'weed s3'.
+  # Verschillen in definitie (zie ook het dashboard):
+  #   - HEAD telt bij beide mee onder GET.
+  #   - Fouten: Ceph rgw_failed_req (elke request met foutcode, ook 4xx);
+  #     SeaweedFS: HTTP-status 4xx en 5xx. Beide zijn dus "alles wat niet slaagde".
+  - name: storage-compare-s3
+    interval: 5s
+    rules:
+      - record: system:s3_requests:rate30s
+        expr: |
+          sum by (system) (rate(ceph_rgw_req[30s]))
+          or
+          sum by (system) (rate(SeaweedFS_s3_request_total[30s]))
+
+      - record: system:s3_requests_by_op:rate30s
+        labels: {op: GET}
+        expr: |
+          sum by (system) (rate(ceph_rgw_op_get_obj_ops[30s]))
+          or sum by (system) (rate(SeaweedFS_s3_request_total{type="GET"}[30s]))
+      - record: system:s3_requests_by_op:rate30s
+        labels: {op: PUT}
+        expr: |
+          sum by (system) (rate(ceph_rgw_op_put_obj_ops[30s]))
+          or sum by (system) (rate(SeaweedFS_s3_request_total{type=~"PUT|POST"}[30s]))
+      - record: system:s3_requests_by_op:rate30s
+        labels: {op: DELETE}
+        expr: |
+          sum by (system) (rate(ceph_rgw_op_del_obj_ops[30s]))
+          or sum by (system) (rate(SeaweedFS_s3_request_total{type="DELETE"}[30s]))
+      - record: system:s3_requests_by_op:rate30s
+        labels: {op: LIST}
+        expr: |
+          sum by (system) (rate(ceph_rgw_op_list_obj_ops[30s])) + sum by (system) (rate(ceph_rgw_op_list_buckets_ops[30s]))
+          or sum by (system) (rate(SeaweedFS_s3_request_total{type="LIST"}[30s]))
+
+      # 'or 0 * ...' zorgt dat er 0 staat in plaats van 'geen data' als er geen fouten zijn
+      - record: system:s3_errors:rate30s
+        expr: |
+          sum by (system) (rate(ceph_rgw_failed_req[30s]))
+          or sum by (system) (rate(SeaweedFS_s3_request_total{code=~"[45].."}[30s]))
+          or 0 * sum by (system) (rate(SeaweedFS_s3_request_total[30s]))
+
+      - record: system:s3_error:ratio
+        expr: system:s3_errors:rate30s / (system:s3_requests:rate30s > 0)
+
+      # Gemiddelde serverlatency per bewerking (seconden). Ceph heeft geen histogram,
+      # dus percentielen komen van de client (warp/elbencho); hier is het gemiddelde de gelijke maat.
+      - record: system:s3_latency_avg_seconds
+        labels: {op: GET}
+        expr: |
+          sum by (system) (rate(ceph_rgw_op_get_obj_lat_sum[30s]))
+            / (sum by (system) (rate(ceph_rgw_op_get_obj_lat_count[30s])) > 0)
+          or
+          sum by (system) (rate(SeaweedFS_s3_request_seconds_sum{type="GET"}[30s]))
+            / (sum by (system) (rate(SeaweedFS_s3_request_seconds_count{type="GET"}[30s])) > 0)
+      - record: system:s3_latency_avg_seconds
+        labels: {op: PUT}
+        expr: |
+          sum by (system) (rate(ceph_rgw_op_put_obj_lat_sum[30s]))
+            / (sum by (system) (rate(ceph_rgw_op_put_obj_lat_count[30s])) > 0)
+          or
+          sum by (system) (rate(SeaweedFS_s3_request_seconds_sum{type="PUT"}[30s]))
+            / (sum by (system) (rate(SeaweedFS_s3_request_seconds_count{type="PUT"}[30s])) > 0)
+      - record: system:s3_latency_avg_seconds
+        labels: {op: DELETE}
+        expr: |
+          sum by (system) (rate(ceph_rgw_op_del_obj_lat_sum[30s]))
+            / (sum by (system) (rate(ceph_rgw_op_del_obj_lat_count[30s])) > 0)
+          or
+          sum by (system) (rate(SeaweedFS_s3_request_seconds_sum{type="DELETE"}[30s]))
+            / (sum by (system) (rate(SeaweedFS_s3_request_seconds_count{type="DELETE"}[30s])) > 0)
+      - record: system:s3_latency_avg_seconds
+        labels: {op: LIST}
+        expr: |
+          sum by (system) (rate(ceph_rgw_op_list_obj_lat_sum[30s]))
+            / (sum by (system) (rate(ceph_rgw_op_list_obj_lat_count[30s])) > 0)
+          or
+          sum by (system) (rate(SeaweedFS_s3_request_seconds_sum{type="LIST"}[30s]))
+            / (sum by (system) (rate(SeaweedFS_s3_request_seconds_count{type="LIST"}[30s])) > 0)
+
+      # S3-payload: in = door clients geschreven, out = door clients gelezen
+      - record: system:s3_bytes:rate30s
+        labels: {direction: in}
+        expr: |
+          sum by (system) (rate(ceph_rgw_op_put_obj_bytes[30s]))
+          or sum by (system) (rate(SeaweedFS_s3_bucket_traffic_received_bytes_total[30s]))
+      - record: system:s3_bytes:rate30s
+        labels: {direction: out}
+        expr: |
+          sum by (system) (rate(ceph_rgw_op_get_obj_bytes[30s]))
+          or sum by (system) (rate(SeaweedFS_s3_bucket_traffic_sent_bytes_total[30s]))
+
+  # ------------------------------------------------------------------ afgeleide verhoudingen
+  - name: storage-compare-ratios
+    interval: 5s
+    rules:
+      # Verhoudingsgetallen voor het capacity planning model (§7.8, hoofdstuk 10).
+      # Alleen boven 10 req/s, anders deel je door bijna-nul.
+      - record: system:cpu_cores_per_1k_rps
+        expr: system:node_cpu_cores_used:sum / (system:s3_requests:rate30s > 10) * 1000
+
+      - record: system:memory_gib_per_1k_rps
+        expr: system:node_memory_used_bytes:sum / 2^30 / (system:s3_requests:rate30s > 10) * 1000
+
+      # Write amplification = bytes naar disk / bytes die clients via S3 schrijven.
+      # Verwachting: ~1,5 bij Ceph EC 4+2, ~2 bij SeaweedFS replicatie 001 (plus metadata/WAL).
+      - record: system:write_amplification_s3:ratio
+        expr: |
+          system:node_disk_written_bytes:rate30s
+            / on (system) (sum by (system) (system:s3_bytes:rate30s{direction="in"}) > 1e6)
+
+      # Netwerk-amplificatie: verkeer tussen/uit de nodes per byte S3-payload (replicatie, EC-chunks)
+      - record: system:network_amplification_s3:ratio
+        expr: |
+          system:node_network_transmit_bytes:rate30s
+            / on (system) (sum by (system) (system:s3_bytes:rate30s) > 1e6)
+
+  # ------------------------------------------------------------------ opslag en gezondheid
+  - name: storage-compare-capacity
+    interval: 15s
+    rules:
+      # TC4: gemeten opslagverhouding = ruw gebruikt / logisch opgeslagen.
+      # Ceph: cluster-breed ruw gebruik vs. som 'stored' van alle pools.
+      # SeaweedFS: fysieke vs. logische bucketgrootte (fysiek = incl. replica's).
+      - record: system:storage_raw_used_bytes
+        expr: |
+          max by (system) (ceph_cluster_total_used_raw_bytes)
+          or sum by (system) (max by (system, bucket) (SeaweedFS_s3_bucket_physical_size_bytes))
+
+      - record: system:storage_logical_bytes
+        expr: |
+          sum by (system) (max by (system, pool_id) (ceph_pool_stored))
+          or sum by (system) (max by (system, bucket) (SeaweedFS_s3_bucket_size_bytes))
+
+      - record: system:storage_efficiency:ratio
+        expr: system:storage_raw_used_bytes / (system:storage_logical_bytes > 1e8)
+
+      - record: system:s3_objects:sum
+        expr: |
+          sum by (system) (max by (system, pool_id) (ceph_pool_objects * on (pool_id) group_left (name) ceph_pool_metadata{name=~".*rgw.buckets.data"}))
+          or sum by (system) (max by (system, bucket) (SeaweedFS_s3_bucket_object_count))
+
+      # Beschikbaarheid van de componenten (scrape-targets) per systeem, 0-1.
+      # Bij een node-uitval (T6) zakt dit; de standby-mgr van Ceph telt als UP.
+      - record: system:targets_up:ratio
+        expr: avg by (system) (up{job=~"node|ceph|ceph-exporter|seaweedfs", system=~"ceph|seaweedfs"})

@@ -8,7 +8,7 @@ global:
 rule_files:
   - /etc/prometheus/rules/*.yml
 
-# Hostnamen/IP's staan in prometheus/targets/*.yml (file_sd).
+# Targets staan in prometheus/targets/*.yml (file_sd): private IP's, met instance = hostnaam.
 # Wijzigingen daarin worden automatisch opgepakt, zonder reload.
 #
 # Ceph en SeaweedFS draaien NA ELKAAR op dezelfde hosts (sue-poc-storage01-04).
@@ -48,11 +48,6 @@ scrape_configs:
   - job_name: seaweedfs
     file_sd_configs:
       - files: [/etc/prometheus/targets/seaweedfs.yml]
-    relabel_configs:
-      - source_labels: [__address__]
-        regex: '([^:]+)(:\d+)?'
-        target_label: host
-        replacement: '$1'
 
   # --- Benchmarkresultaten van de load-generator ---
   - job_name: pushgateway

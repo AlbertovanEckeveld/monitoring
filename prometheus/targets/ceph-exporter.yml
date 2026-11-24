@@ -1,6 +1,11 @@
 # Fase 1 (Ceph). Wordt door scripts/set-phase.sh aan/uit gezet (.disabled).
-# ceph-exporter (Reef en nieuwer) op elke Ceph-host. Met cephadm:
+# ceph-exporter op elke Ceph-host (per-daemon perf counters: OSD- en RGW-ops en -latency).
 #   ceph orch apply ceph-exporter
-- targets: ['16.171.147.252:9926', '13.53.197.123:9926', '51.20.4.68:9926', '16.171.152.90:9926']
-  labels:
-    system: ceph
+- targets: ['172.31.46.179:9926']
+  labels: {system: ceph, instance: sue-poc-storage01}
+- targets: ['172.31.33.90:9926']
+  labels: {system: ceph, instance: sue-poc-storage02}
+- targets: ['172.31.33.88:9926']
+  labels: {system: ceph, instance: sue-poc-storage03}
+- targets: ['172.31.32.222:9926']
+  labels: {system: ceph, instance: sue-poc-storage04}

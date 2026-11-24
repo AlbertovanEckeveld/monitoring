@@ -6,15 +6,15 @@ monitoring/
 ├── .env.example                # Grafana-wachtwoord, retentie
 ├── prometheus/
 │   ├── prometheus.yml          # scrape-jobs
-│   ├── targets/*.yml           # hostnamen (live herladen); *.yml.disabled = andere fase
-│   │   └── storage-nodes.yml   # gegenereerd door scripts/set-phase.sh
-│   └── rules/compare.yml       # recording rules per 'system' (incl. write amplification)
+│   ├── targets/*.yml           # private IP's + instance=hostnaam (live herladen); *.yml.disabled = andere fase
+│   │   └── storage-nodes.yml   # label 'system' wordt gezet door scripts/set-phase.sh
+│   └── rules/compare.yml       # recording rules per 'system': S3, resources, verhoudingen, opslag
 ├── grafana/
 │   ├── provisioning/           # datasources + dashboard-provider
 │   └── dashboards/
-│       ├── vergelijking/       # Ceph vs SeaweedFS naast elkaar
-│       ├── ceph/               # via scripts/fetch-dashboards.sh
-│       └── seaweedfs/          # via scripts/fetch-dashboards.sh
+│       ├── vergelijking/       # Ceph vs SeaweedFS: per test (mediaan) en als tijdreeks
+│       ├── ceph/               # poc-ceph.json (kerncijfers) + officiële dashboards (fetch-dashboards.sh)
+│       └── seaweedfs/          # poc-seaweedfs.json (kerncijfers) + officieel dashboard (fetch-dashboards.sh)
 ├── loki/loki.yml
 ├── nodes/                      # agents voor de storage-nodes
 │   ├── docker-compose.yml      # node_exporter + Grafana Alloy
@@ -25,7 +25,8 @@ monitoring/
     ├── setup-monitoring-vm.sh  # monitoring-VM in één keer opzetten
     ├── set-phase.sh            # fase wisselen: ceph | seaweedfs
     ├── fetch-dashboards.sh     # officiële Ceph/SeaweedFS-dashboards ophalen
-    └── run-bench.sh            # benchmark + Grafana-annotatie + Pushgateway
+    ├── setup-ceph.sh           # Ceph met cephadm uitrollen op de storage-nodes
+    └── run-bench.sh            # benchmark + Grafana-annotatie + serversamenvatting naar Pushgateway
 ```
 
 ## 1. Monitoring-VM (is ook de load-generator)
@@ -118,10 +119,20 @@ Kijk tijdens zware runs in het vergelijkingsdashboard naar de CPU van `loadgen`.
 tegen 100%, dan meet je de load-generator en niet het storagesysteem.
 
 Omdat de fases na elkaar lopen, zie je in de tijdgrafieken per tijdvak maar één systeem.
-Vergelijk ze zo:
-- **Resultatentabellen** (Pushgateway) tonen alle runs van beide systemen naast elkaar.
+Er zijn drie dashboards (onderling gelinkt, Ceph = blauw, SeaweedFS = oranje):
+
+| Dashboard | Waarvoor |
+|---|---|
+| **Ceph vs SeaweedFS – vergelijking** | Per test naast elkaar: req/s, fouten, latency, CPU-cores en geheugen per 1.000 req/s, write amplification, opslagverhouding (TC4), beschikbaarheid en herstel. Mediaan, min en max over de herhalingen. |
+| **Ceph – kerncijfers PoC** | Clusterstatus, pools en hun schema, RGW per bewerking, OSD-latency, herstel (degraded/PG's), hosts. |
+| **SeaweedFS – kerncijfers PoC** | Master-leader, componenten, S3 p50/p99, filer (H4), volumeservers, under-replicated volumes, CPU/geheugen per component. |
+
+- **Per test**: `run-bench.sh` berekent na elke run de serverkant-gemiddelden over het meetvenster
+  (zonder opwarmminuut) en pusht die. Het vergelijkingsdashboard zet die per test naast elkaar.
+  Gebruik dus voor beide systemen **dezelfde testnaam**.
 - **Annotaties**: elke run is een regio met als tags `system` en `testnaam`. De faseovergang heeft de tag `phase`.
   Klik een regio aan om in te zoomen op precies die run.
+- Latency aan serverkant is het **gemiddelde**: Ceph RGW heeft geen histogram. Percentielen (p99) komen uit warp/elbencho.
 
 ## 3. Benchmarken
 
@@ -129,15 +140,21 @@ Vergelijk ze zo:
 gemaakt door `setup-monitoring-vm.sh`. Op de monitoring-VM:
 
 ```bash
-./scripts/run-bench.sh ceph put-1MiB-c32 -- \
-  warp put --host=rgw1:8080 --access-key="$AK" --secret-key="$SK" \
-    --obj.size=1MiB --concurrent=32 --duration=5m --benchdata=results/ceph_put-1MiB-c32
+source ceph-s3.env      # gemaakt door setup-ceph.sh
+for rep in 1 2 3 4 5; do
+  ./scripts/run-bench.sh ceph put-1MiB-c32 --rep $rep -- \
+    warp put --host="$S3_ENDPOINT" --access-key="$S3_ACCESS_KEY" --secret-key="$S3_SECRET_KEY" \
+      --obj.size=1MiB --concurrent=32 --duration=5m --benchdata=results/ceph_put-1MiB-c32_r$rep
+done
 ```
 
 Elke run krijgt:
-- een **annotatie-regio** in het vergelijkingsdashboard,
-- een **logbestand** in `results/`,
-- de **duur en status** in de Pushgateway.
+- een **annotatie-regio** in de dashboards,
+- een **logbestand** in `results/` en een **serversamenvatting** (`*_server.json`) voor het testlogboek,
+- in de Pushgateway: duur, status en de serverkant-gemiddelden (req/s, latency, CPU, geheugen, write amplification, ...).
+
+Opties: `--rep N` (herhaling; elke herhaling blijft apart bewaard) en `--warmup SEC` (standaard 60 s niet meetellen).
+Piekt de CPU van de loadgenerator boven 90%, dan geeft het script een waarschuwing: markeer die run (§7.8).
 
 Bij fio (`--fio-json`) worden ook de throughput, IOPS en p50/p99/p99.9-latency gepusht en komen ze in de resultatentabel.
 

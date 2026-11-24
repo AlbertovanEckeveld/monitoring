@@ -1,5 +1,13 @@
-# GEGENEREERD door scripts/set-phase.sh – niet met de hand aanpassen.
+# Storage-nodes (node_exporter). Private IP's: die blijven gelijk na stop/start van de VM's.
+# 'instance' = hostnaam, zodat panels per host leesbaar zijn en de officiële Ceph-dashboards
+# (hosts-overview, host-details) node- en Ceph-metrics aan elkaar kunnen koppelen.
+# scripts/set-phase.sh zet alleen het label 'system'; hosts en IP's pas je hier aan.
 # Huidige fase: ceph
-- targets: ['16.171.147.252:9100', '13.53.197.123:9100', '51.20.4.68:9100', '16.171.152.90:9100']
-  labels:
-    system: ceph
+- targets: ['172.31.46.179:9100']
+  labels: {system: ceph, instance: sue-poc-storage01}
+- targets: ['172.31.33.90:9100']
+  labels: {system: ceph, instance: sue-poc-storage02}
+- targets: ['172.31.33.88:9100']
+  labels: {system: ceph, instance: sue-poc-storage03}
+- targets: ['172.31.32.222:9100']
+  labels: {system: ceph, instance: sue-poc-storage04}

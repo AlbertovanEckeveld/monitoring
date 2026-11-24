@@ -171,9 +171,11 @@ for i in "${!NAMES[@]}"; do HOST_ARGS+=("${NAMES[$i]}=${PRIV[$i]}"); done
 CLUSTER_SCRIPT=$(cat <<'EOS'
 set -euo pipefail
 RGW="$1"; shift
-# 'cephadm shell' meldt bij elke aanroep welke fsid/image het gebruikt; die regels filteren we weg
-ceph()          { cephadm shell -- ceph "$@"          2> >(grep -Ev '^(Inferring|Using ceph image)' >&2); }
-radosgw_admin() { cephadm shell -- radosgw-admin "$@" 2> >(grep -Ev '^(Inferring|Using ceph image)' >&2); }
+# 'cephadm shell' meldt bij elke aanroep welke fsid/image het gebruikt; die regels filteren we weg.
+# </dev/null is essentieel: dit script komt via stdin binnen, en 'cephadm shell' zou de rest ervan opeten.
+FILTER='^(Inferring|Using ceph image|quay\.io/ceph)'
+ceph()          { cephadm shell -- ceph "$@"          </dev/null 2> >(grep -Ev "$FILTER" >&2); }
+radosgw_admin() { cephadm shell -- radosgw-admin "$@" </dev/null 2> >(grep -Ev "$FILTER" >&2); }
 
 N=() ; for hp in "$@"; do N+=("${hp%%=*}"); done
 for hp in "$@"; do ceph orch host add "${hp%%=*}" "${hp#*=}"; done
@@ -220,7 +222,7 @@ KEYS=""
 log "5/5 Klaar"
 if (( RGW )) && [[ -n "$KEYS" ]]; then
   ENV_FILE="$ROOT/ceph-s3.env"
-  ( umask 077; { echo "S3_ENDPOINT=${NAMES[0]}:8080"; echo "$KEYS"; } > "$ENV_FILE" )
+  ( umask 077; { echo "S3_ENDPOINT=${PRIV[0]}:8080"; echo "$KEYS"; } > "$ENV_FILE" )
   echo "S3-gegevens voor warp staan in $ENV_FILE (niet in git)."
 fi
 cat <<EOF
