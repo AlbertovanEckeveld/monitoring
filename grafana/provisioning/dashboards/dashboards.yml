@@ -1,0 +1,13 @@
+apiVersion: 1
+
+# Elke submap in grafana/dashboards/ wordt een folder in Grafana:
+#   vergelijking/  ceph/  seaweedfs/
+providers:
+  - name: storage-benchmark
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true          # wijzigingen in de UI gaan verloren bij herstart; exporteer ze naar JSON
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true

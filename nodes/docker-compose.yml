@@ -1,0 +1,51 @@
+# Agents voor ELKE storage-node (sue-poc-storage01-04) en de load-generator.
+#
+# Installeer deze agents VOORDAT je de snapshot maakt. Dan staan ze na de
+# snapshot-revert er nog en meet je Ceph en SeaweedFS met exact dezelfde node_exporter.
+#
+#   cp .env.example .env
+#   ./set-phase.sh ceph            # zet SYSTEM en start node_exporter + Alloy
+#
+# Na de snapshot-revert:  ./set-phase.sh seaweedfs
+#
+# Port 9100 is van ONZE node_exporter. Bootstrap Ceph daarom met
+# 'cephadm bootstrap --skip-monitoring-stack', anders wil cephadm een eigen
+# node-exporter op 9100 starten (conflict).
+
+name: storage-agents
+
+services:
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    profiles: [node-exporter]
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=:9100
+    volumes:
+      - /:/host:ro,rslave
+
+  # Logs (journald + /var/log/ceph + /var/log/seaweedfs) naar Loki op de monitoring-VM
+  alloy:
+    image: grafana/alloy:v1.10.0
+    restart: unless-stopped
+    network_mode: host            # dan is de hostnaam in de logs die van de node zelf
+    environment:
+      SYSTEM: ${SYSTEM:?zet SYSTEM (ceph|seaweedfs|loadgen) in .env}
+      LOKI_URL: ${LOKI_URL:?zet LOKI_URL in .env}
+    command:
+      - run
+      - --server.http.listen-addr=127.0.0.1:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+      - /var/log:/var/log:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+
+volumes:
+  alloy-data:

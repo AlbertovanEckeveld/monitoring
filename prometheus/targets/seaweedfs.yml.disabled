@@ -1,0 +1,20 @@
+# Fase 2 (SeaweedFS). Wordt door scripts/set-phase.sh aan/uit gezet (.disabled).
+# Elk component gestart met -metricsPort:
+#   weed master -metricsPort=9324 ...
+#   weed volume -metricsPort=9325 ...
+#   weed filer  -metricsPort=9326 ...
+#   weed s3     -metricsPort=9327 ...
+# Aangenomen topologie: 3 masters (01-03), volume op alle 4, filer + s3 op 01.
+# Pas dit aan als jullie het anders uitrollen.
+
+- targets: ['sue-poc-storage01:9324', 'sue-poc-storage02:9324', 'sue-poc-storage03:9324']
+  labels: {system: seaweedfs, component: master}
+
+- targets: ['sue-poc-storage01:9325', 'sue-poc-storage02:9325', 'sue-poc-storage03:9325', 'sue-poc-storage04:9325']
+  labels: {system: seaweedfs, component: volume}
+
+- targets: ['sue-poc-storage01:9326']
+  labels: {system: seaweedfs, component: filer}
+
+- targets: ['sue-poc-storage01:9327']
+  labels: {system: seaweedfs, component: s3}

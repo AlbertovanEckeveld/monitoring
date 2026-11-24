@@ -1,0 +1,8 @@
+# node_exporter op de load-generator(s) en andere vaste machines (poort 9100).
+# De storage-nodes (sue-poc-storage01-04) staan NIET hier maar in storage-nodes.yml,
+# want hun label 'system' wisselt per testfase (zie scripts/set-phase.sh).
+# Het label 'system' is de sleutel voor alle vergelijkingspanelen.
+
+- targets: ['loadgen1:9100']      # <-- hostnaam van de load-generator invullen
+  labels:
+    system: loadgen

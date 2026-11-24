@@ -1,0 +1,49 @@
+# Recording rules: alles geaggregeerd per 'system' (ceph | seaweedfs | loadgen),
+# zodat het vergelijkingsdashboard snel en consistent is.
+#
+# Schijven: alleen fysieke devices (geen partities, dm-/LVM of loop), anders
+# tel je bij Ceph (LVM onder OSD's) dubbel.
+
+groups:
+  - name: storage-compare
+    interval: 5s
+    rules:
+      - record: system:node_cpu_utilisation:avg
+        expr: 1 - avg by (system) (rate(node_cpu_seconds_total{mode="idle"}[30s]))
+
+      - record: system:node_cpu_iowait:avg
+        expr: avg by (system) (rate(node_cpu_seconds_total{mode="iowait"}[30s]))
+
+      - record: system:node_memory_used_bytes:sum
+        expr: sum by (system) (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
+
+      - record: system:node_disk_written_bytes:rate30s
+        expr: sum by (system) (rate(node_disk_written_bytes_total{device=~"sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme[0-9]+n[0-9]+"}[30s]))
+
+      - record: system:node_disk_read_bytes:rate30s
+        expr: sum by (system) (rate(node_disk_read_bytes_total{device=~"sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme[0-9]+n[0-9]+"}[30s]))
+
+      - record: system:node_disk_writes:rate30s
+        expr: sum by (system) (rate(node_disk_writes_completed_total{device=~"sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme[0-9]+n[0-9]+"}[30s]))
+
+      - record: system:node_disk_reads:rate30s
+        expr: sum by (system) (rate(node_disk_reads_completed_total{device=~"sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme[0-9]+n[0-9]+"}[30s]))
+
+      # Drukste schijf per systeem (0-1). Dicht bij 1 = disk is de bottleneck.
+      - record: system:node_disk_io_utilisation:max
+        expr: max by (system) (rate(node_disk_io_time_seconds_total{device=~"sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme[0-9]+n[0-9]+"}[30s]))
+
+      - record: system:node_network_transmit_bytes:rate30s
+        expr: sum by (system) (rate(node_network_transmit_bytes_total{device!~"lo|docker.*|veth.*|br-.*|virbr.*|cali.*|flannel.*|cni.*"}[30s]))
+
+      - record: system:node_network_receive_bytes:rate30s
+        expr: sum by (system) (rate(node_network_receive_bytes_total{device!~"lo|docker.*|veth.*|br-.*|virbr.*|cali.*|flannel.*|cni.*"}[30s]))
+
+      # Write amplification = bytes naar disk / bytes die de client verstuurt.
+      # Alleen zinvol tijdens PUT-tests, en als de load-generator alleen naar
+      # het geteste systeem verkeer stuurt. Bij 3x replicatie verwacht je >= 3.
+      - record: system:write_amplification:ratio
+        expr: |
+          system:node_disk_written_bytes:rate30s{system=~"ceph|seaweedfs"}
+            / ignoring(system) group_left()
+          (sum(system:node_network_transmit_bytes:rate30s{system="loadgen"}) > 1e6)

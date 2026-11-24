@@ -1,0 +1,84 @@
+# Monitoring-VM: Prometheus + Grafana + Pushgateway + Loki + node_exporter
+# Start:   docker compose up -d
+# Reload Prometheus-config zonder herstart:  curl -X POST http://localhost:9090/-/reload
+#
+# Image-versies zijn bewust vastgezet (reproduceerbaarheid). Controleer bij installatie
+# of er nieuwere patch-releases zijn en leg de gebruikte versies vast bij je resultaten.
+
+name: storage-monitoring
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROM_RETENTION:-30d}
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # om node_exporter van de VM zelf te scrapen
+
+  pushgateway:
+    image: prom/pushgateway:v1.11.1
+    restart: unless-stopped
+    command:
+      - --persistence.file=/data/pushgateway.db
+      - --persistence.interval=1m
+    volumes:
+      - pushgateway-data:/data
+    ports:
+      - "9091:9091"
+
+  loki:
+    image: grafana/loki:3.5.3
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?zet GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 5s
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+
+  # Metrics van de monitoring-VM zelf: check dat deze VM geen bottleneck is
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=:9100
+    volumes:
+      - /:/host:ro,rslave
+
+volumes:
+  prometheus-data:
+  pushgateway-data:
+  loki-data:
+  grafana-data:

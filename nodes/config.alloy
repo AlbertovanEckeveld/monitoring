@@ -1,0 +1,47 @@
+// Grafana Alloy: verzamelt logs en stuurt ze naar Loki.
+// Labels 'system' en 'host' komen overeen met de Prometheus-labels,
+// zodat je in Grafana logs en metrics naast elkaar kunt zetten.
+
+loki.write "default" {
+  endpoint {
+    url = sys.env("LOKI_URL")
+  }
+  external_labels = {
+    system = sys.env("SYSTEM"),
+    host   = constants.hostname,
+  }
+}
+
+// --- journald: cephadm-daemons loggen standaard naar journald, systemd-units van weed ook ---
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+}
+
+loki.source.journal "journal" {
+  forward_to    = [loki.write.default.receiver]
+  relabel_rules = loki.relabel.journal.rules
+  labels        = { job = "journal" }
+  max_age       = "12h"
+}
+
+// --- Logbestanden (als je die gebruikt) ---
+local.file_match "storage_logs" {
+  path_targets = [
+    {"__path__" = "/var/log/ceph/**/*.log",   "job" = "ceph"},
+    {"__path__" = "/var/log/seaweedfs/*.log", "job" = "seaweedfs"},
+  ]
+}
+
+loki.source.file "storage_logs" {
+  targets    = local.file_match.storage_logs.targets
+  forward_to = [loki.write.default.receiver]
+}

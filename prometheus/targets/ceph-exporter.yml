@@ -1,0 +1,6 @@
+# Fase 1 (Ceph). Wordt door scripts/set-phase.sh aan/uit gezet (.disabled).
+# ceph-exporter (Reef en nieuwer) op elke Ceph-host. Met cephadm:
+#   ceph orch apply ceph-exporter
+- targets: ['sue-poc-storage01:9926', 'sue-poc-storage02:9926', 'sue-poc-storage03:9926', 'sue-poc-storage04:9926']
+  labels:
+    system: ceph

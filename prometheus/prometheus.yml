@@ -1,0 +1,67 @@
+global:
+  scrape_interval: 5s        # kort tijdens benchmarks; anders mis je pieken
+  scrape_timeout: 4s
+  evaluation_interval: 5s
+  external_labels:
+    lab: storage-benchmark
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+# Hostnamen/IP's staan in prometheus/targets/*.yml (file_sd).
+# Wijzigingen daarin worden automatisch opgepakt, zonder reload.
+#
+# Ceph en SeaweedFS draaien NA ELKAAR op dezelfde hosts (sue-poc-storage01-04).
+# scripts/set-phase.sh <ceph|seaweedfs> zet het label 'system' van de storage-nodes
+# en schakelt de targets van het andere systeem uit (bestand -> *.yml.disabled).
+# Een uitgeschakeld bestand matcht niets; dat is geen fout voor Prometheus.
+
+scrape_configs:
+  # --- Systeemmetrics: de eerlijke, gelijke meetlat voor beide systemen ---
+  - job_name: node
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/node.yml            # load-generator e.d. (vast)
+          - /etc/prometheus/targets/storage-nodes.yml   # sue-poc-storage01-04 (per fase)
+    relabel_configs:
+      # instance = hostnaam zonder poort, zodat je kunt joinen met andere jobs
+      - source_labels: [__address__]
+        regex: '([^:]+)(:\d+)?'
+        target_label: instance
+        replacement: '$1'
+
+  # --- Ceph: mgr/prometheus-module (cluster-brede metrics, alleen actieve mgr levert data) ---
+  - job_name: ceph
+    honor_labels: true
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/ceph-mgr.yml]
+
+  # --- Ceph: ceph-exporter (per-daemon perf counters: OSD-latency, RGW-ops) ---
+  - job_name: ceph-exporter
+    honor_labels: true
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/ceph-exporter.yml]
+
+  # --- SeaweedFS: master / volume / filer / s3 met -metricsPort ---
+  - job_name: seaweedfs
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/seaweedfs.yml]
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '([^:]+)(:\d+)?'
+        target_label: host
+        replacement: '$1'
+
+  # --- Benchmarkresultaten van de load-generator ---
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ['pushgateway:9091']
+
+  # --- Monitoring-stack zelf ---
+  - job_name: monitoring-self
+    static_configs:
+      - targets: ['localhost:9090']
+        labels: {component: prometheus}
+      - targets: ['host.docker.internal:9100']
+        labels: {component: node, system: monitoring}
